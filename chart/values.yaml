@@ -1,0 +1,123 @@
+deployment:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 0
+  containers:
+    - name: qbit
+      image:
+        repository: ghcr.io/hotio/qbittorrent
+        tag: release-5.0.0
+      ports:
+        - name: http-tcp
+          containerPort: 80
+          protocol: TCP
+        - name: http-udp
+          containerPort: 80
+          protocol: UDP
+        - name: tcp
+          containerPort: 1400
+          protocol: TCP
+        - name: udp
+          containerPort: 1400
+          protocol: UDP
+      env:
+        - name: WEBUI_PORTS
+          value: "80/tcp,80/udp"
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+      resources:
+        requests:
+          cpu: 0m
+          memory: 0Mi
+        limits:
+          cpu: 2000m
+          memory: 2000Mi
+      volumeMounts:
+        - name: storage
+          mountPath: /config
+          subPath: qbittorrent-videos/config
+        - name: storage
+          mountPath: /downloads
+          subPath: media/downloads
+  volumes:
+    - name: storage
+      type: pvc
+      typeName: storage-pvc
+
+ingresses:
+  - name: ingress
+    annotations:
+      nginx.ingress.kubernetes.io/auth-url: https://qbit2.@vault(secrets/data/domain main | DOMAIN_NAME)/oauth2/auth
+      nginx.ingress.kubernetes.io/auth-signin: https://qbit2.@vault(secrets/data/domain main | DOMAIN_NAME)/oauth2/start?rd=$escaped_request_uri
+    tls:
+      secretName: tls-secret
+    hosts:
+      - host: qbit2.@vault(secrets/data/domain main | DOMAIN_NAME)
+        paths:
+          - path: "/"
+            pathType: Prefix
+            serviceName: service
+            servicePort: http-tcp
+  - name: oauth2-ingress
+    tls:
+      secretName: tls-secret
+    hosts:
+      - host: qbit2.@vault(secrets/data/domain main | DOMAIN_NAME)
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            serviceName: oauth2-service
+            servicePort: 80
+
+pvcs:
+  - name: storage-pvc
+    storageClassName: local-path-persistent
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    volumeMode: Filesystem
+
+services:
+  - name: service
+    type: ClusterIP
+    ports:
+      - name: http-tcp
+        protocol: TCP
+        port: 80
+        targetPort: http-tcp
+      - name: http-udp
+        protocol: UDP
+        port: 80
+        targetPort: http-udp
+  - name: service-lb
+    type: LoadBalancer
+    ports:
+      - name: tcp
+        protocol: TCP
+        port: 1400
+        targetPort: tcp
+        nodePort: 30020
+      - name: udp
+        protocol: UDP
+        port: 1400
+        targetPort: udp
+        nodePort: 30020
+  - name: oauth2-service
+    type: ExternalName
+    externalName: service.oauth2-proxy.svc.cluster.local
+    ports:
+      - name: http
+        protocol: TCP
+        port: 80
+
+vaultSecrets:
+  - name: tls-secret
+    type: kubernetes.io/tls
+    path: secrets/certificates
+    templates:
+      tls.crt: "{% .Secrets.tls_crt %}"
+      tls.key: "{% .Secrets.tls_key %}"
