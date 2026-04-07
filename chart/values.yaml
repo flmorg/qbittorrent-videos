@@ -43,6 +43,9 @@ deployment:
         - name: storage
           mountPath: /downloads
           subPath: media/downloads
+        - name: storage
+          mountPath: /vuetorrent
+          subPath: vuetorrent
   volumes:
     - name: storage
       type: pvc
