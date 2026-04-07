@@ -15,4 +15,5 @@ jobs:
       chartName: universal-chart
       version: ^1.0.0
       valuesPath: chart/values.yaml
+      releaseName: main
     secrets: inherit
